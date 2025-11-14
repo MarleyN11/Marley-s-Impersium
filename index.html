@@ -16,17 +16,18 @@ button:hover { background:#45a049; }
 .hidden { display:none; }
 
 /* Dashboard */
-#app { padding:20px; border-radius:10px; max-width:1000px; margin:30px auto; background: rgba(0,0,0,0.2); }
+#app { padding:20px; border-radius:10px; max-width:1000px; margin:30px auto; background: rgba(0,0,0,0.2); position:relative; }
 .imperium-section { border:1px solid rgba(255,255,255,0.3); padding:10px; margin:10px 0; border-radius:5px; }
 .announcement { border-bottom:1px solid rgba(255,255,255,0.3); padding:5px; margin:5px 0; }
-.user-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
-.user-row button { width:30%; padding:5px; margin-left:5px; font-size:12px; }
+.user-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; flex-wrap: wrap; }
+.user-row button { width:auto; padding:5px 8px; margin-left:5px; font-size:12px; }
+#currentUserBox { position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.3); padding:8px 12px; border-radius:8px; font-size:14px; }
+#currentUserBox button { background:#e74c3c; font-size:12px; margin-top:5px; }
 
-/* MiniGames */
-#quiz, #memory { background: rgba(255,255,255,0.1); padding:15px; border-radius:8px; margin-top:20px;}
-#quiz button, #memory button { width:auto; margin:5px; }
-.card { width:60px; height:60px; background:#333; display:inline-block; margin:5px; line-height:60px; text-align:center; cursor:pointer; font-size:20px; border-radius:5px; }
-.card.matched { background:green; cursor:default; }
+/* Memory Cards */
+#memoryBoard { display:grid; grid-template-columns: repeat(4, 60px); grid-gap:10px; justify-content:center; }
+.card { width:60px; height:60px; background:rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:center; font-size:24px; cursor:pointer; border-radius:5px; }
+.card.matched { background:#4CAF50; color:#fff; cursor:default; }
 </style>
 </head>
 <body class="login-bg">
@@ -54,6 +55,7 @@ button:hover { background:#45a049; }
 
 <!-- DASHBOARD -->
 <div id="app" class="hidden">
+<div id="currentUserBox"></div>
 <h2>Willkommen zu Marleys Imperium</h2>
 <button onclick="logout()">Logout</button>
 
@@ -97,17 +99,25 @@ const USERS_KEY = 'imperium_users_v5';
 const SESSION_KEY = 'imperium_session_v5';
 const ANNOUNCE_KEY = 'imperium_announcements_v5';
 
-// Initial Admin
+// Initial Admins (nur diese haben Rechte, alles andere wird gelöscht)
+const initialUsers = [
+    {user:'admin', pass:'admin123', birth:'2000-01-01', isAdmin:true},
+    {user:'admin2', pass:'admin1234', birth:'2000-01-02', isAdmin:true}
+];
+
 if(!localStorage.getItem(USERS_KEY)){
-    localStorage.setItem(USERS_KEY, JSON.stringify([
-        {user:'Marley', pass:'060184', birth:'2000-01-01', isAdmin:true}
-    ]));
+    localStorage.setItem(USERS_KEY, JSON.stringify(initialUsers));
 }
 
 // Hilfsfunktionen
 function load(k){ return JSON.parse(localStorage.getItem(k) || '[]'); }
 function save(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
 function currentUser(){ return localStorage.getItem(SESSION_KEY); }
+function currentUserObj(){ 
+  const u = currentUser(); 
+  if(!u) return null; 
+  return load(USERS_KEY).find(x=>x.user===u); 
+}
 
 // Login & Logout
 function login(){
@@ -123,7 +133,7 @@ function logout(){
     localStorage.removeItem(SESSION_KEY);
     document.getElementById('app').classList.add('hidden');
     showLogin();
-    renderAnnouncements(); // Ankündigungen auch auf Login-Seite sichtbar
+    renderAnnouncements();
 }
 
 // Registrierung
@@ -134,7 +144,7 @@ function register(){
     if(!u||!p||!b){document.getElementById('msgReg').textContent='Bitte alles ausfüllen'; return;}
     const users=load(USERS_KEY);
     if(users.find(x=>x.user===u)){document.getElementById('msgReg').textContent='Benutzer existiert bereits'; return;}
-    users.push({user:u, pass:p, birth:b, isAdmin:false});
+    users.push({user:u, pass:p, birth:b, isAdmin:false}); // NEU: keine Adminrechte
     save(USERS_KEY,users);
     document.getElementById('msgReg').textContent='Registrierung erfolgreich! Bitte einloggen.';
 }
@@ -159,15 +169,38 @@ function renderApp(){
     document.getElementById('registerBox').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
     document.body.className = 'dashboard-bg';
-    const users=load(USERS_KEY);
-    const admin=users.find(u=>u.user===currentUser() && u.isAdmin);
-    document.getElementById('adminPanel').classList.add('hidden');
-    document.getElementById('adminAnnounce').classList.toggle('hidden', !admin);
-    document.getElementById('adminButtonContainer').classList.toggle('hidden', !admin);
+    const user = currentUserObj();
+    if(!user) return;
+    
+    // Admin nur sichtbar, wenn isAdmin
+    document.getElementById('adminPanel').classList.toggle('hidden', !user.isAdmin);
+    document.getElementById('adminAnnounce').classList.toggle('hidden', !user.isAdmin);
+    document.getElementById('adminButtonContainer').classList.toggle('hidden', !user.isAdmin);
+    
+    renderCurrentUserBox();
     renderUsers();
     renderAnnouncements();
     loadQuiz();
     loadMemory();
+}
+
+// Aktueller Benutzer oben links
+function renderCurrentUserBox(){
+  const box = document.getElementById('currentUserBox');
+  const user = currentUserObj();
+  if(!user){ box.innerHTML=''; return; }
+  box.innerHTML = `<strong>${user.user}</strong> ${user.isAdmin ? '(Admin)' : ''}<br><button onclick="deleteOwnAccount()">Konto löschen</button>`;
+}
+
+// Eigenes Konto löschen
+function deleteOwnAccount(){
+  if(!confirm('Willst du wirklich dein Konto löschen?')) return;
+  const u = currentUser();
+  let users = load(USERS_KEY);
+  users = users.filter(x=>x.user !== u);
+  save(USERS_KEY, users);
+  logout();
+  alert('Dein Konto wurde gelöscht.');
 }
 
 // Admin Panel toggle
@@ -181,20 +214,20 @@ function renderUsers(){
     const list=document.getElementById('userList');
     const users=load(USERS_KEY);
     list.innerHTML='';
-    const admin=users.find(u=>u.user===currentUser() && u.isAdmin);
+    const admin=currentUserObj()?.isAdmin;
     users.forEach((u,i)=>{
         const row=document.createElement('div');
         row.className='user-row';
         row.innerHTML=`<span>${u.user} - ${u.pass} - Geb: ${u.birth} ${u.isAdmin?'(Admin)':''}</span>`;
-        if(admin && u.user !== 'Marley'){
+        if(admin){
             const delBtn=document.createElement('button');
             delBtn.textContent='Löschen';
-            delBtn.onclick=()=>{users.splice(i,1); save(USERS_KEY,users); renderUsers();};
-            const adminBtn=document.createElement('button');
-            adminBtn.textContent=u.isAdmin?'Admin entfernen':'Zu Admin machen';
-            adminBtn.onclick=()=>{ u.isAdmin=!u.isAdmin; save(USERS_KEY,users); renderUsers(); };
+            delBtn.onclick=()=>{
+              if(confirm(`Soll Benutzer "${u.user}" wirklich gelöscht werden?`)){
+                users.splice(i,1); save(USERS_KEY,users); renderUsers();
+              }
+            };
             row.appendChild(delBtn);
-            row.appendChild(adminBtn);
         }
         list.appendChild(row);
     });
@@ -205,8 +238,7 @@ function renderAnnouncements(){
     const list=document.getElementById('announcements');
     const announces=load(ANNOUNCE_KEY);
     list.innerHTML='';
-    const users=load(USERS_KEY);
-    const admin=users.find(u=>u.user===currentUser() && u.isAdmin);
+    const admin=currentUserObj()?.isAdmin;
     announces.forEach((a,i)=>{
         const div=document.createElement('div');
         div.className='announcement';
@@ -243,10 +275,7 @@ let quizQuestions=[
     {q:'Hauptstadt von Deutschland?', a:['Berlin','Paris','London','Madrid'], correct:0},
     {q:'5*6=?', a:['30','25','35','40'], correct:0},
     {q:'Welches Element hat das Symbol O?', a:['Gold','Oxygen','Silber','Wasserstoff'], correct:1},
-    {q:'10-4=?', a:['6','5','7','4'], correct:0},
-    {q:'3*3=?', a:['6','9','12','8'], correct:1},
-    {q:'Hauptstadt von Frankreich?', a:['Berlin','Paris','London','Madrid'], correct:1},
-    {q:'12/4=?', a:['2','3','4','5'], correct:2}
+    {q:'10-4=?', a:['6','5','7','4'], correct:0}
 ];
 let currentQ = 0;
 function shuffle(array){for(let i=array.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[array[i],array[j]]=[array[j],array[i]];} return array;}
@@ -270,12 +299,12 @@ function showQuestion(){
 }
 function nextQuestion(){ currentQ++; if(currentQ>=quizQuestions.length) loadQuiz(); else showQuestion(); }
 
-// Memory mit Zahlen und mehr Karten
+// Memory
 let memoryCards = [];
 let firstCard=null;
 function loadMemory(){
     const numbers = [];
-    for(let i=1;i<=8;i++){ numbers.push(i); numbers.push(i); } // 8 Paare = 16 Karten
+    for(let i=1;i<=8;i++){ numbers.push(i); numbers.push(i); }
     memoryCards = shuffle(numbers);
     const board = document.getElementById('memoryBoard');
     board.innerHTML='';
@@ -305,7 +334,7 @@ function flipCard(c){
 
 // Bei Laden prüfen
 window.onload = function(){
-    renderAnnouncements(); // Ankündigungen auch vor Login sichtbar
+    renderAnnouncements();
     if(currentUser()) renderApp();
 }
 </script>
